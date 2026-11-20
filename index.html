@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chongqing Dynasty: Rookie Pick Order</title>
+<style>
+  :root {
+    --bg: #f6f5f1; --card: #ffffff; --ink: #1c1b19; --muted: #6d6a63; --line: #e3e0d8;
+    --accent: #b3261e; --accent-soft: #fbe9e7; --open: #a7a39a; --hl: #fff3c4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151413; --card: #1f1e1c; --ink: #f0eee9; --muted: #a09c93; --line: #33312d;
+      --accent: #ff8a80; --accent-soft: #3a1f1c; --open: #6b6861; --hl: #4a4016;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 4px; }
+  h1 { font-size: 24px; margin: 0; letter-spacing: -0.01em; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 8px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; min-width: 150px; flex: 1; }
+  .stat b { display: block; font-size: 24px; font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--muted); font-size: 13px; }
+  .stat.next b { color: var(--accent); }
+  .rounds { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 14px 6px; }
+  table { width: 100%; border-collapse: collapse; }
+  td, th { padding: 7px 6px; border-top: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { border-top: 0; font-size: 12px; color: var(--muted); font-weight: 600; }
+  td.pick { font-variant-numeric: tabular-nums; font-weight: 700; width: 52px; white-space: nowrap; }
+  td .k { color: var(--muted); font-size: 13px; display: block; }
+  tr.open td { color: var(--open); }
+  tr.next td { background: var(--accent-soft); }
+  tr.next td.pick { color: var(--accent); }
+  tr.hl td { background: var(--hl); }
+  .mgr { cursor: pointer; background: none; border: 0; padding: 0; font: inherit; color: inherit; font-weight: 600; text-align: left; }
+  .mgr:hover { text-decoration: underline; }
+  .holders { margin-top: 20px; }
+  .holders td.n { width: 60px; font-variant-numeric: tabular-nums; }
+  .foot { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 20px; color: var(--muted); font-size: 13px; }
+  button.refresh { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
+  .err { background: var(--accent-soft); color: var(--accent); border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; display: none; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--open); margin-right: 6px; }
+  .dot.live { background: #2e9e5b; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1 id="title">Rookie Pick Order</h1>
+    <span id="status" class="sub"></span>
+  </header>
+  <p class="sub" id="explain"></p>
+  <div class="err" id="err"></div>
+  <div class="bar" id="bar"></div>
+  <div class="rounds" id="rounds"></div>
+  <div class="card holders">
+    <h2>Picks by manager</h2>
+    <table id="holders"></table>
+  </div>
+  <div class="foot">
+    <button class="refresh" id="refresh">Refresh now</button>
+    <span id="updated"></span>
+  </div>
+</main>
+<script>
+// Change this ID to point the page at another league. You can also add ?league=<id> to the URL.
+const DEFAULT_LEAGUE_ID = "1429319588847292416"; // Chongqing Dynasty
+const LEAGUE_ID = new URLSearchParams(location.search).get("league") || DEFAULT_LEAGUE_ID;
+const API = "https://api.sleeper.app/v1/";
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const get = async path => {
+  const r = await fetch(API + path, { cache: "no-store" });
+  if (!r.ok) throw new Error("Sleeper returned " + r.status + " for " + path);
+  return r.json();
+};
+let highlighted = null, timer = null, lastModel = null;
+
+function buildModel(league, users, rosters, draft, picks) {
+  const teams = league.total_rosters || 12;
+  const rounds = (league.settings && league.settings.draft_rounds) || 3;
+  const total = teams * rounds;
+  const userName = {};
+  (users || []).forEach(u => { userName[u.user_id] = u.display_name; });
+  const rosterName = {};
+  (rosters || []).forEach(r => {
+    rosterName[r.roster_id] = r.owner_id ? (userName[r.owner_id] || "Team " + r.roster_id) : "Open team (" + r.roster_id + ")";
+  });
+  const kickers = (picks || [])
+    .filter(p => p.metadata && p.metadata.position === "K")
+    .sort((a, b) => a.pick_no - b.pick_no);
+  const label = i => (Math.floor(i / teams) + 1) + "." + String(i % teams + 1).padStart(2, "0");
+  const slots = [];
+  for (let i = 0; i < total; i++) {
+    const k = kickers[i];
+    if (!k) { slots.push({ i, label: label(i), round: Math.floor(i / teams) + 1, open: true }); continue; }
+    // The pick belongs to the team the kicker was drafted onto (this already accounts for
+    // startup draft slots traded before the pick was made). Kickers get dropped afterwards,
+    // so current rosters are not used to decide ownership.
+    const owner = rosterName[k.roster_id] || userName[k.picked_by] || "Unknown";
+    slots.push({
+      i, label: label(i), round: Math.floor(i / teams) + 1, open: false, owner,
+      via: "",
+      kicker: ((k.metadata.first_name || "") + " " + (k.metadata.last_name || "")).trim(),
+      nfl: k.metadata.team || "",
+      at: k.round + "." + String(k.draft_slot).padStart(2, "0")
+    });
+  }
+  return {
+    name: league.name, season: Number(league.season) + 1, teams, rounds, total, slots,
+    drafted: Math.min(kickers.length, total), extra: Math.max(kickers.length - total, 0),
+    draftStatus: draft ? draft.status : league.status, picksMade: (picks || []).length,
+    managers: Object.values(rosterName)
+  };
+}
+
+function render(m) {
+  lastModel = m;
+  document.title = m.name + ": Rookie Pick Order";
+  $("title").textContent = m.name + ": " + m.season + " Rookie Pick Order";
+  const live = m.draftStatus === "drafting";
+  const statusText = { pre_draft: "Startup draft has not started", drafting: "Startup draft in progress", paused: "Startup draft paused", complete: "Startup draft complete" }[m.draftStatus] || m.draftStatus;
+  $("status").innerHTML = '<span class="dot' + (live ? " live" : "") + '"></span>' + esc(statusText);
+  $("explain").textContent = "Each kicker taken in the startup draft is a " + m.season + " rookie pick. The first kicker drafted is 1.01, the second is 1.02, and so on through " + m.rounds + " rounds (" + m.total + " picks).";
+  const next = m.slots.find(s => s.open);
+  $("bar").innerHTML =
+    '<div class="stat"><b>' + m.drafted + " / " + m.total + "</b><span>kickers drafted</span></div>" +
+    '<div class="stat next"><b>' + (next ? next.label : "Done") + "</b><span>" + (next ? "pick the next kicker is worth" : "all picks are assigned") + "</span></div>" +
+    '<div class="stat"><b>' + (m.total - m.drafted) + "</b><span>picks still on the board</span></div>" +
+    (m.extra ? '<div class="stat"><b>' + m.extra + "</b><span>extra kickers drafted (no pick attached)</span></div>" : "");
+  let html = "";
+  for (let r = 1; r <= m.rounds; r++) {
+    html += '<div class="card"><h2>Round ' + r + "</h2><table><tr><th>Pick</th><th>Owner</th><th>Taken at</th></tr>";
+    m.slots.filter(s => s.round === r).forEach(s => {
+      if (s.open) {
+        const isNext = next && s.i === next.i;
+        html += '<tr class="open' + (isNext ? " next" : "") + '"><td class="pick">' + s.label + "</td><td>" + (isNext ? "Next kicker drafted" : "Open") + "</td><td></td></tr>";
+      } else {
+        html += '<tr data-owner="' + esc(s.owner) + '"' + (highlighted === s.owner ? ' class="hl"' : "") + '><td class="pick">' + s.label + '</td><td><button class="mgr" data-owner="' + esc(s.owner) + '">' + esc(s.owner) + '</button><span class="k">' + esc(s.kicker) + (s.nfl ? ", " + esc(s.nfl) : "") + (s.via ? " · drafted by " + esc(s.via) : "") + "</span></td><td>" + s.at + "</td></tr>";
+      }
+    });
+    html += "</table></div>";
+  }
+  $("rounds").innerHTML = html;
+  const by = {};
+  m.managers.forEach(n => { by[n] = []; });
+  m.slots.filter(s => !s.open).forEach(s => { (by[s.owner] = by[s.owner] || []).push(s.label); });
+  const rows = Object.entries(by).sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0], undefined, { sensitivity: "base" }));
+  $("holders").innerHTML = "<tr><th>Manager</th><th>Picks</th><th>Which</th></tr>" + rows.map(([n, p]) =>
+    '<tr data-owner="' + esc(n) + '"' + (highlighted === n ? ' class="hl"' : "") + '><td><button class="mgr" data-owner="' + esc(n) + '">' + esc(n) + '</button></td><td class="n">' + p.length + "</td><td>" + (p.length ? p.join(", ") : '<span style="color:var(--open)">none yet</span>') + "</td></tr>").join("");
+  $("updated").textContent = "Updated " + new Date().toLocaleTimeString() + ". Refreshes every " + (live ? "30 seconds" : "5 minutes") + (live ? " while the draft is live." : ".");
+}
+
+async function load() {
+  clearTimeout(timer);
+  let live = false;
+  try {
+    const league = await get("league/" + LEAGUE_ID);
+    const [users, rosters, draft, picks] = await Promise.all([
+      get("league/" + LEAGUE_ID + "/users"), get("league/" + LEAGUE_ID + "/rosters"),
+      get("draft/" + league.draft_id), get("draft/" + league.draft_id + "/picks")
+    ]);
+    const m = buildModel(league, users, rosters, draft, picks);
+    live = m.draftStatus === "drafting";
+    render(m);
+    $("err").style.display = "none";
+  } catch (e) {
+    $("err").textContent = "Could not reach Sleeper (" + e.message + "). Showing the last data loaded, if any. Will retry.";
+    $("err").style.display = "block";
+  }
+  timer = setTimeout(load, live ? 30000 : 300000);
+}
+
+document.addEventListener("click", e => {
+  const b = e.target.closest(".mgr");
+  if (!b) return;
+  highlighted = highlighted === b.dataset.owner ? null : b.dataset.owner;
+  if (lastModel) render(lastModel);
+});
+$("refresh").addEventListener("click", load);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+load();
+</script>
+</body>
+</html>
