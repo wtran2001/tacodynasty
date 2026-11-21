@@ -45,6 +45,8 @@
   .holders td.n { width: 60px; font-variant-numeric: tabular-nums; }
   .foot { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 20px; color: var(--muted); font-size: 13px; }
   button.refresh { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
+  .done { background: #1f7a45; color: #fff; border-radius: 10px; padding: 14px 18px; margin-bottom: 16px; display: none; font-size: 16px; }
+  .done b { display: block; font-size: 18px; margin-bottom: 2px; }
   .err { background: var(--accent-soft); color: var(--accent); border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; display: none; }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--open); margin-right: 6px; }
   .dot.live { background: #2e9e5b; }
@@ -57,6 +59,7 @@
     <span id="status" class="sub"></span>
   </header>
   <p class="sub" id="explain"></p>
+  <div class="done" id="done" role="status"></div>
   <div class="err" id="err"></div>
   <div class="bar" id="bar"></div>
   <div class="rounds" id="rounds"></div>
@@ -130,6 +133,15 @@ function render(m) {
   $("status").innerHTML = '<span class="dot' + (live ? " live" : "") + '"></span>' + esc(statusText);
   $("explain").textContent = "Each kicker taken in the startup draft is a " + m.season + " rookie pick. The first kicker drafted is 1.01, the second is 1.02, and so on through " + m.rounds + " rounds (" + m.total + " picks).";
   const next = m.slots.find(s => s.open);
+  // Banner: shown as soon as every pick has a kicker attached.
+  const done = $("done");
+  if (m.drafted >= m.total) {
+    done.innerHTML = "<b>All " + m.total + " kickers are drafted.</b>Every " + m.season + " rookie pick is assigned. Commissioner: time to remove the K slot from the lineup." +
+      (m.extra ? " " + m.extra + " kicker" + (m.extra === 1 ? "" : "s") + " drafted after that " + (m.extra === 1 ? "has" : "have") + " no pick attached." : "");
+    done.style.display = "block";
+  } else {
+    done.style.display = "none";
+  }
   $("bar").innerHTML =
     '<div class="stat"><b>' + m.drafted + " / " + m.total + "</b><span>kickers drafted</span></div>" +
     '<div class="stat next"><b>' + (next ? next.label : "Done") + "</b><span>" + (next ? "pick the next kicker is worth" : "all picks are assigned") + "</span></div>" +
