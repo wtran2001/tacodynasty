@@ -110,7 +110,7 @@ function buildModel(league, users, rosters, draft, picks) {
       via: "",
       kicker: ((k.metadata.first_name || "") + " " + (k.metadata.last_name || "")).trim(),
       nfl: k.metadata.team || "",
-      at: k.round + "." + String(k.draft_slot).padStart(2, "0")
+      at: k.round + "." + String((k.pick_no - 1) % teams + 1).padStart(2, "0") // pick within the round, not the board column
     });
   }
   return {
