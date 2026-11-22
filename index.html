@@ -39,6 +39,8 @@
   tr.next td { background: var(--accent-soft); }
   tr.next td.pick { color: var(--accent); }
   tr.hl td { background: var(--hl); }
+  tr.bonus td { border-top: 2px dashed var(--line); }
+  tr.bonus td.pick { color: var(--accent); }
   .mgr { cursor: pointer; background: none; border: 0; padding: 0; font: inherit; color: inherit; font-weight: 600; text-align: left; }
   .mgr:hover { text-decoration: underline; }
   .holders { margin-top: 20px; }
@@ -77,6 +79,10 @@
 const DEFAULT_LEAGUE_ID = "1429319588847292416"; // Chongqing Dynasty
 const LEAGUE_ID = new URLSearchParams(location.search).get("league") || DEFAULT_LEAGUE_ID;
 const API = "https://api.sleeper.app/v1/";
+// Extra picks that are not tied to a kicker. Put the manager's Sleeper name in "owner" once it is decided.
+const BONUS_PICKS = [
+  { round: 2, label: "2.13", owner: "", note: "League winner's prize. Owner decided when the season ends." }
+];
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const get = async path => {
@@ -158,12 +164,19 @@ function render(m) {
         html += '<tr data-owner="' + esc(s.owner) + '"' + (highlighted === s.owner ? ' class="hl"' : "") + '><td class="pick">' + s.label + '</td><td><button class="mgr" data-owner="' + esc(s.owner) + '">' + esc(s.owner) + '</button><span class="k">' + esc(s.kicker) + (s.nfl ? ", " + esc(s.nfl) : "") + (s.via ? " · drafted by " + esc(s.via) : "") + "</span></td><td>" + s.at + "</td></tr>";
       }
     });
+    BONUS_PICKS.filter(b => b.round === r).forEach(b => {
+      html += '<tr class="bonus"' + (b.owner ? ' data-owner="' + esc(b.owner) + '"' : "") + (b.owner && highlighted === b.owner ? ' style="background:var(--hl)"' : "") + '><td class="pick">' + esc(b.label) + "</td><td>" +
+        (b.owner ? '<button class="mgr" data-owner="' + esc(b.owner) + '">' + esc(b.owner) + "</button>" : "<b>League winner</b>") +
+        '<span class="k">' + esc(b.note) + "</span></td><td>Bonus</td></tr>";
+    });
     html += "</table></div>";
   }
   $("rounds").innerHTML = html;
   const by = {};
   m.managers.forEach(n => { by[n] = []; });
   m.slots.filter(s => !s.open).forEach(s => { (by[s.owner] = by[s.owner] || []).push(s.label); });
+  BONUS_PICKS.filter(b => b.owner).forEach(b => { (by[b.owner] = by[b.owner] || []).push(b.label); });
+  Object.values(by).forEach(list => list.sort());
   const rows = Object.entries(by).sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0], undefined, { sensitivity: "base" }));
   $("holders").innerHTML = "<tr><th>Manager</th><th>Picks</th><th>Which</th></tr>" + rows.map(([n, p]) =>
     '<tr data-owner="' + esc(n) + '"' + (highlighted === n ? ' class="hl"' : "") + '><td><button class="mgr" data-owner="' + esc(n) + '">' + esc(n) + '</button></td><td class="n">' + p.length + "</td><td>" + (p.length ? p.join(", ") : '<span style="color:var(--open)">none yet</span>') + "</td></tr>").join("");
